@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<title>HTK Hooks — Case Study</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm 15mm; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", "Inter", Arial, sans-serif;
+    color: #15202f;
+    font-size: 10pt;
+    line-height: 1.52;
+  }
+  h1, h2, h3 { color: #0b1220; margin: 0; }
+  h1 { font-size: 29pt; letter-spacing: -0.5pt; line-height: 1.1; }
+  h2 {
+    font-size: 14.5pt;
+    margin: 0 0 9pt;
+    padding-bottom: 5pt;
+    border-bottom: 2px solid #0ea5e9;
+  }
+  h3 { font-size: 10.8pt; margin: 11pt 0 4pt; }
+  p { margin: 0 0 6.5pt; }
+  ul, ol { margin: 0 0 7pt 15pt; padding: 0; }
+  li { margin-bottom: 2.5pt; }
+  code {
+    font-family: "Cascadia Mono", Consolas, monospace;
+    background: #eef4fa;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 8.8pt;
+  }
+  .sheet { page-break-after: always; min-height: 254mm; }
+  .sheet:last-child { page-break-after: auto; }
+  .cover {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 258mm;
+  }
+  .eyebrow {
+    font-size: 8.8pt;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: #0284c7;
+    font-weight: 700;
+  }
+  .cover-rule { width: 64pt; height: 4pt; background: #0ea5e9; margin: 17pt 0; }
+  .cover-sub { font-size: 12.5pt; color: #334155; max-width: 135mm; }
+  .meta { font-size: 10pt; color: #475569; }
+  .meta strong { color: #0b1220; }
+  .arch {
+    font-family: "Cascadia Mono", Consolas, monospace;
+    font-size: 7.9pt;
+    line-height: 1.45;
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 9pt 11pt;
+    white-space: pre;
+    margin: 7pt 0 9pt;
+  }
+  table { width: 100%; border-collapse: collapse; margin: 5pt 0 9pt; font-size: 9.1pt; }
+  th, td { text-align: left; padding: 4pt 6pt; border-bottom: 1px solid #dbe3ee; vertical-align: top; }
+  th { background: #f1f5f9; color: #0b1220; }
+  .note {
+    background: #f0f9ff;
+    border-left: 3px solid #0ea5e9;
+    padding: 6.5pt 9pt;
+    margin: 7pt 0;
+    color: #0f2a43;
+  }
+  .warn {
+    background: #fff7ed;
+    border-left: 3px solid #f59e0b;
+    padding: 6.5pt 9pt;
+    margin: 7pt 0;
+    color: #57350a;
+  }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 13pt; }
+  .kpi { border: 1px solid #dbe3ee; border-radius: 6px; padding: 7pt 9pt; }
+  .kpi b { display: block; font-size: 15pt; color: #0284c7; }
+  .kpi span { font-size: 8.4pt; color: #475569; }
+  .small { font-size: 8.6pt; color: #475569; }
+  .flow {
+    border: 1px solid #dbe3ee;
+    border-radius: 6px;
+    padding: 7pt 9pt;
+    margin: 6pt 0;
+    background: #fbfdff;
+  }
+  .flow b { color: #0369a1; }
+  .tag {
+    display: inline-block;
+    font-size: 8.2pt;
+    border: 1px solid #bae6fd;
+    color: #0369a1;
+    border-radius: 999px;
+    padding: 1px 7px;
+    margin-right: 4pt;
+    background: #f0f9ff;
+  }
+</style>
+</head>
+<body>
+
+<section class="sheet cover">
+  <div>
+    <p class="eyebrow">Case Study · HTK 0396241674</p>
+    <div class="cover-rule"></div>
+    <h1>HTK Hooks</h1>
+    <p class="cover-sub">
+      Webhook delivery control plane: nhận sự kiện có chữ ký, chống trùng, retry backoff + jitter,
+      DLQ, replay và xoay secret — mọi lần giao đều nhìn thấy được.
+    </p>
+    <p style="margin-top:14pt">
+      <span class="tag">Next.js 15</span>
+      <span class="tag">TypeScript</span>
+      <span class="tag">PGlite / PostgreSQL</span>
+      <span class="tag">HMAC-SHA256</span>
+      <span class="tag">Vercel Blob</span>
+    </p>
+  </div>
+  <div class="meta">
+    <p><strong>Tác giả:</strong> HTK 0396241674</p>
+    <p><strong>Ngày:</strong> 11/11/2026</p>
+    <p><strong>Live:</strong> https://htk-webhook-service.vercel.app</p>
+    <p><strong>Mã nguồn:</strong> https://github.com/shirmtry/htk-webhook-service</p>
+    <p class="small">Dự án 07/10 trong portfolio full-stack.</p>
+  </div>
+</section>
+
+<section class="sheet">
+  <h2>1. Bài toán</h2>
+  <p>
+    Webhook là giao kèo qua mạng: bên gửi chỉ biết mình đã đẩy request, không biết bên nhận có xử lý
+    được hay không. Khi hệ thống lớn lên, ba loại lỗi xuất hiện cùng lúc: event mất vì upstream trả 500
+    và không ai retry; event trùng vì mạng đứt sau khi ghi nhưng trước khi nhận 200; và retry dồn cùng
+    một thời điểm tạo ra bão request đánh sập upstream vừa mới hồi phục.
+  </p>
+  <p>
+    Điều tra cũng là một bài toán riêng. Khi khách hỏi “event <code>invoice.paid</code> của tôi đâu”,
+    đội vận hành thường chỉ có log rời rạc, không biết lần giao thứ ba trả body gì, thời gian bao lâu,
+    hay event đã bị bỏ cuộc sau bao nhiêu lần thử. Xoay secret càng khó hơn: đổi ngay thì mất event
+    đang bay, đổi chậm thì secret cũ bị lộ quá lâu.
+  </p>
+
+  <h3>Ràng buộc của dự án</h3>
+  <ul>
+    <li><strong>Một codebase, deploy Vercel:</strong> API, UI và worker route chung Next.js App Router.</li>
+    <li><strong>Không có broker bên ngoài:</strong> phải tự xây retry và DLQ trên nền dữ liệu sẵn có.</li>
+    <li><strong>Serverless không có tiến trình nền:</strong> attempt chạy trong request hoặc qua cron.</li>
+    <li><strong>Demo phải tất định:</strong> không phụ thuộc một URL ngoài luôn sống để trình diễn retry.</li>
+    <li><strong>Không bịa số:</strong> metric nào chưa đo thì ghi rõ là chưa đo.</li>
+  </ul>
+
+  <h3>Mục tiêu đo được</h3>
+  <table>
+    <tr><th>Mục tiêu</th><th>Cách kiểm chứng</th></tr>
+    <tr><td>Sai chữ ký không tạo event</td><td>Test HMAC + test ingest trả 401 trước khi ghi</td></tr>
+    <tr><td>Một key chỉ một event</td><td>Unique (endpoint, idempotency key) + test duplicate</td></tr>
+    <tr><td>Retry không dồn cùng lúc</td><td>Backoff + jitter có test biên ±20%</td></tr>
+    <tr><td>Bỏ cuộc có thể phục hồi</td><td>DLQ sau max_attempts, replay reset và giao lại</td></tr>
+    <tr><td>Xoay secret không mất event</td><td>Secret cũ trong grace 24 giờ, test hết hạn bị từ chối</td></tr>
+    <tr><td>Debug được từng lần giao</td><td>UI hiện payload, HTTP code, body, duration, attempt</td></tr>
+  </table>
+
+  <div class="warn">
+    <strong>Điểm khó nhất:</strong> vừa giữ tính đúng đắn của một hệ phân tán (idempotency, retry, DLQ)
+    vừa không được dựng thêm hạ tầng. Bài toán bị ép vào một Postgres nhúng và một worker gọi theo request.
+  </div>
+</section>
+
+<section class="sheet">
+  <h2>2. Giải pháp</h2>
+
+  <h3>Kiến trúc</h3>
+  <div class="arch">Sender ──POST /api/ingest/:slug──┐
+  timestamp + HMAC + idem key                  │
+                                               ▼
+Next.js App Router trên Vercel (Node runtime)
+   ├─ /api/ingest/:slug      HMAC, rate limit, idempotency
+   ├─ /api/endpoints         CRUD, secret, rotate, test
+   ├─ /api/events/:id        timeline, replay
+   ├─ /api/jobs/deliver      worker (user scope hoặc cron secret)
+   └─ /api/metrics, health
+                    │
+                    ▼
+   PGlite (PostgreSQL WASM): events, deliveries, audit
+                    │ JSON snapshot, ETag HEAD
+                    ▼
+   Vercel Blob (private)</div>
+
+  <p>
+    Mỗi request mở PGlite trong lambda, đồng bộ snapshot từ Blob khi ETag đổi, xử lý rồi ghi lại.
+    Local dùng file <code>./.data/pg</code>. Ingest chạy delivery ngay trong request để UI thấy kết quả
+    tức thì; các lần đến hạn sau được worker xử lý.
+  </p>
+
+  <h3>Mô hình dữ liệu</h3>
+  <table>
+    <tr><th>Bảng</th><th>Cột chính</th><th>Vì sao</th></tr>
+    <tr><td><code>endpoints</code></td><td>slug, mode, secret, previous_secret, rate_limit, status</td><td>Một dòng đủ cấu hình kênh giao</td></tr>
+    <tr><td><code>events</code></td><td>payload, status, attempts, next_attempt_at, idempotency_key</td><td>Hàng đợi bền vững, chống trùng</td></tr>
+    <tr><td><code>deliveries</code></td><td>attempt_no, outcome, status_code, body, duration</td><td>Bằng chứng từng lần giao</td></tr>
+    <tr><td><code>audit_logs</code></td><td>actor, action, target</td><td>Xoay secret, replay, xem secret</td></tr>
+  </table>
+
+  <h3>Ba lớp chặn trước khi ghi event</h3>
+  <div class="flow">
+    <b>1. HMAC:</b> <code>sha256=HMAC(secret, timestamp + "." + rawBody)</code>, lệch quá 300 giây bị từ chối.<br />
+    <b>2. Rate limit:</b> cửa sổ 1 phút theo endpoint; vượt hạn trả 429 kèm <code>Retry-After</code>.<br />
+    <b>3. Idempotency:</b> unique <code>(endpoint_id, idempotency_key)</code>; lần lặp trả event cũ.
+  </div>
+
+  <p>
+    Thứ tự này cố ý đặt rate limit trước HMAC để giảm chi phí crypto khi bị spam. So sánh chữ ký dùng
+    <code>timingSafeEqual</code>, không so sánh chuỗi thường. Trong 24 giờ sau khi xoay, cả secret mới
+    và cũ đều được chấp nhận; hết hạn thì chỉ secret mới.
+  </p>
+</section>
+
+<section class="sheet">
+  <h2>3. Retry, DLQ và replay</h2>
+
+  <h3>Lịch thử</h3>
+  <p>
+    Bậc chờ là 10 giây, 30 giây, 2 phút, 5 phút, 15 phút. Mỗi bậc cộng jitter ±20% để hàng nghìn event
+    cùng lỗi không đập vào upstream ở cùng một giây. Hàm tính là hàm thuần, nhận nguồn random để test
+    biên chính xác.
+  </p>
+  <div class="arch">attempt 1 fail  -> next = now + 10s  ± 20%
+attempt 2 fail  -> next = now + 30s  ± 20%
+attempt 3 fail  -> next = now + 2m   ± 20%
+attempt 4 fail  -> next = now + 5m   ± 20%
+attempt 5 fail  -> status = dlq (không hẹn nữa)
+
+replay -> attempts = 0, next = now, source = replay
+       -> giữ payload + idempotency key
+       -> ghi audit event.replayed(actor)</div>
+
+  <h3>Vòng đời một lần giao</h3>
+  <ol>
+    <li>Đọc event và endpoint từ PGlite; bỏ qua nếu event đã delivered hoặc endpoint paused.</li>
+    <li>Gọi target: sandbox mô phỏng 500 hai lần rồi 200; live gọi URL thật, timeout 5 giây.</li>
+    <li>Lưu <code>deliveries</code> với HTTP code, body (tối đa 2 KB), duration, outcome.</li>
+    <li>Cập nhật <code>events</code>: attempts, last_status_code, next_attempt_at hoặc dlq.</li>
+    <li>Nếu chạm DLQ, ghi audit với actor null để phân biệt hành động hệ thống.</li>
+  </ol>
+
+  <h3>Quyết định thiết kế</h3>
+  <table>
+    <tr><th>Quyết định</th><th>Đánh đổi</th></tr>
+    <tr><td>Worker gọi ngay sau ingest + cron</td><td>UI phản hồi nhanh, nhưng lambda chết giữa attempt thì phải chờ sweep</td></tr>
+    <tr><td>Sandbox tất định</td><td>Demo không phụ thuộc mạng, nhưng không đo được lỗi TLS hay DNS thật</td></tr>
+    <tr><td>Lưu response body 2 KB</td><td>Đủ debug, tránh phình snapshot; body lớn bị cắt</td></tr>
+    <tr><td>Secret đọc được trong DB demo</td><td>UI hiện lại được secret; production phải mã hoá at-rest</td></tr>
+    <tr><td>Chặn host nội bộ cho live</td><td>Giảm SSRF; chưa chống DNS rebinding</td></tr>
+  </table>
+
+  <h3>Bảo vệ phía UI và API</h3>
+  <p>
+    Mọi route quản lý đều yêu cầu session cookie httpOnly; event và endpoint được scope theo user.
+    Các thao tác nhạy cảm — xem secret, xoay secret, replay, gửi test — có rate limit riêng và ghi audit.
+    Đăng nhập/đăng ký giới hạn theo IP, sai mật khẩu không tiết lộ tài khoản có tồn tại hay không.
+  </p>
+</section>
+
+<section class="sheet">
+  <h2>4. Đo lường, trade-off và điểm chưa hoàn thiện</h2>
+
+  <h3>Số liệu thật</h3>
+  <table>
+    <tr><th>Luồng</th><th>p50</th><th>p95</th><th>Ghi chú</th></tr>
+    <tr><td><code>GET /api/endpoints</code></td><td>14.68 ms</td><td>21.45 ms</td><td>30 mẫu</td></tr>
+    <tr><td><code>GET /api/metrics</code></td><td>14.68 ms</td><td>26.19 ms</td><td>30 mẫu</td></tr>
+    <tr><td><code>GET /api/endpoints/:id</code></td><td>15.13 ms</td><td>17.39 ms</td><td>30 mẫu</td></tr>
+    <tr><td><code>GET /api/events/:id</code></td><td>14.82 ms</td><td>17.07 ms</td><td>30 mẫu</td></tr>
+    <tr><td><code>POST /api/jobs/deliver</code></td><td>14.62 ms</td><td>16.54 ms</td><td>20 mẫu</td></tr>
+    <tr><td><code>POST /api/ingest/:slug</code></td><td>14.63 ms</td><td>17.13 ms</td><td>40 mẫu, HMAC</td></tr>
+    <tr><td>Ingest trùng key</td><td>15.33 ms</td><td>16.51 ms</td><td>15 mẫu</td></tr>
+  </table>
+
+  <div class="two">
+    <div class="kpi"><b>23/23</b><span>test pass: 6 signature, 5 backoff, 12 tích hợp</span></div>
+    <div class="kpi"><b>40/40</b><span>ingest liên tiếp trả 202, 0 lỗi chữ ký</span></div>
+    <div class="kpi"><b>3 / 7 ms</b><span>request_logs p50 / p95 trên 500 mẫu</span></div>
+    <div class="kpi"><b>60%</b><span>success rate seed (p95 giao hàng 22 ms)</span></div>
+    <div class="kpi"><b>0 px</b><span>overflow ngang ở 375 và 1440</span></div>
+    <div class="kpi"><b>0</b><span>console error khi chạy browser flow</span></div>
+  </div>
+
+  <h3>Trade-off đã chấp nhận</h3>
+  <ul>
+    <li><strong>Không có queue thật:</strong> attempt chạy trong request/cron. Đúng với tải demo, không đủ cho
+      retry kéo dài nhiều giờ nếu lambda bị kill.</li>
+    <li><strong>PGlite + Blob single-writer:</strong> nhiều instance ghi đồng thời có thể ghi đè snapshot.
+      Đây là giới hạn của lựa chọn “SQL thật nhưng không dịch vụ ngoài”.</li>
+    <li><strong>Rate limit per-instance:</strong> bộ đếm nằm trong bảng rate_limits của từng instance,
+      không phải quota toàn cục dưới tải cao.</li>
+    <li><strong>Secret plaintext trong demo:</strong> cần thiết để ký và hiện lại; production phải dùng KMS.</li>
+  </ul>
+
+  <h3>Điểm chưa hoàn thiện</h3>
+  <ul>
+    <li>Chưa đo throughput đồng thời, độ trễ cron thật trên Vercel, hay độ bền khi lambda bị kill giữa attempt.</li>
+    <li>Chưa có batch replay, tìm kiếm event theo payload, hay thông báo khi event vào DLQ.</li>
+    <li>Chặn SSRF dựa trên hostname/IP literal; DNS rebinding chưa được xử lý.</li>
+    <li>Live mode chưa có chứng chỉ pinning hay allowlist domain theo endpoint.</li>
+  </ul>
+
+  <div class="note">
+    Điểm mạnh của bản này không phải quy mô mà là khả năng giải thích: mỗi trạng thái đều có bằng chứng
+    trong <code>deliveries</code>, mỗi hành động đều có audit, và mọi con số trong báo cáo đều lấy từ
+    lần đo thật trên máy local.
+  </div>
+</section>
+
+<section class="sheet">
+  <h2>5. Bài học</h2>
+
+  <p>
+    <strong>Idempotency phải là ràng buộc dữ liệu, không phải câu lệnh if.</strong> Ban đầu tôi định
+    kiểm tra key bằng một select rồi mới insert. Cách đó có race giữa hai request đồng thời. Chuyển sang
+    unique index và <code>on conflict do nothing</code> khiến database tự bảo vệ, còn code chỉ đọc lại
+    event cũ khi insert không trả dòng nào.
+  </p>
+  <p>
+    <strong>Retry không jitter là cách tạo bão.</strong> Lịch backoff cố định vẫn dồn các event cùng lỗi
+    vào cùng một giây. Chỉ cần ±20% là đủ tản tải mà không làm chậm đáng kể. Viết hàm nhận nguồn random
+    giúp test được cả hai biên thay vì chỉ tin vào cảm giác.
+  </p>
+  <p>
+    <strong>Debug console là tính năng, không phải phần phụ.</strong> Khi có timeline từng attempt, việc
+    xác định lỗi nằm ở phía gửi hay phía nhận chỉ mất vài giây. Chính vì vậy tôi lưu cả HTTP code, body
+    và duration thay vì chỉ một cột “last error”.
+  </p>
+  <p>
+    <strong>Xoay secret cần một khoảng chuyển tiếp.</strong> Đổi tức thì làm mất các request đang bay với
+    chữ ký cũ. Giữ secret cũ 24 giờ, nhưng giới hạn rõ thời gian và ghi audit, cân bằng giữa an toàn và
+    liên tục.
+  </p>
+  <p>
+    <strong>Trung thực về hạ tầng.</strong> Dùng PGlite và Blob giúp dự án chạy trọn trên Vercel, nhưng
+    tôi ghi rõ single-writer và worker theo request là giới hạn thật. Một portfolio kỹ thuật chỉ có giá
+    trị khi nói đúng điều mình đã và chưa làm được.
+  </p>
+
+  <div class="note">
+    Bước tiếp theo nếu có thời gian: thay worker bằng queue thật (SQS hoặc pg-boss), thêm batch replay,
+    mã hoá secret at-rest, và đo tải 1.000 event/phút trên môi trường nhiều instance.
+  </div>
+
+  <p class="small">
+    Tác giả HTK 0396241674 · 11/11/2026 · Dự án 07/10 trong portfolio full-stack.
+  </p>
+</section>
+
+</body>
+</html>
